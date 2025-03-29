@@ -1,0 +1,7 @@
+apps/
+apps_/
+apps/plugins/demo-plugin/
+apps/themes/demo-theme/
+docker/traefik/acme.json
+dev/
+.env

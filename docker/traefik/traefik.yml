@@ -1,0 +1,22 @@
+api:
+  dashboard: true
+  insecure: true  # OK en local seulement
+
+entryPoints:
+  web:
+    address: ":80"
+
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: ${NETWORK_NAME}
+
+certificatesResolvers:
+  localresolver:
+    acme:
+      email: ${ACME_EMAIL}
+      storage: /letsencrypt/acme.json
+      tlsChallenge: {}

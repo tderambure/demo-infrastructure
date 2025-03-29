@@ -1,0 +1,137 @@
+version: '3.9'
+
+services:
+
+  php_basket:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: php_basket
+    volumes:
+      - ./apps/wordpress_basket:/var/www/html
+      - ./apps/plugins/demo-plugin:/var/www/html/web/app/plugins/demo-plugin
+      - ./apps/themes/demo-theme:/var/www/html/web/app/themes/demo-theme
+    environment:
+      WORDPRESS_INSTANCE: basket
+      DB_HOST: mysql_basket
+    command: sh -c "wait-for-it.sh mysql_basket:3306 --timeout=30 && php-fpm"
+    depends_on:
+      - mysql_basket
+      - redis_basket
+    networks:
+      - demo-network
+
+  nginx_basket:
+    image: nginx:latest
+    container_name: nginx_basket
+    volumes:
+      - ./apps/wordpress_basket:/var/www/html
+      - ./apps/plugins/demo-plugin:/var/www/html/web/app/plugins/demo-plugin
+      - ./apps/themes/demo-theme:/var/www/html/web/app/themes/demo-theme
+      - ./docker/nginx/default.conf.template:/etc/nginx/conf.d/default.conf.template
+    environment:
+      WORDPRESS_URL: wp-basket.localhost
+      PHP_SERVICE_NAME: php_basket
+      WORDPRESS_INSTANCE: basket
+    depends_on:
+      - php_basket
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.wordpress.rule: Host(`wp-basket.localhost`)
+      traefik.http.routers.wordpress.entrypoints: web
+      traefik.http.services.wordpress.loadbalancer.server.port: 80
+    command: >
+      sh -c "envsubst '$$PHP_SERVICE_NAME $$WORDPRESS_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+    networks:
+      - demo-network
+
+  mysql_basket:
+    image: mariadb:latest
+    container_name: mysql_basket
+    volumes:
+      - db_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    ports:
+      - "3306:3306"
+    networks:
+      - demo-network
+
+  redis_basket:
+    image: redis:alpine
+    container_name: redis_basket
+    networks:
+      - demo-network
+
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.le.acme.email=you@example.com"
+      - "--certificatesresolvers.le.acme.storage=/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./docker/traefik/acme.json:/acme.json
+    networks:
+      - demo-network
+
+  netdata:
+    image: netdata/netdata:latest
+    container_name: netdata
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+    ports:
+      - "19999:19999"
+    volumes:
+      - netdata_data:/var/lib/netdata
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+    environment:
+      DO_NOT_TRACK: "1"
+    networks:
+      - demo-network
+
+  node:
+    build:
+      context: .
+      dockerfile: docker/node/Dockerfile
+    container_name: node_sass
+    volumes:
+      - ./apps/plugins/demo-plugin:/app/demo-plugin
+      - ./apps/themes/demo-theme:/app/demo-theme
+    working_dir: /app
+#    command: npm run build
+    networks:
+      - demo-network
+
+volumes:
+  db_data:
+  netdata_data:
+
+networks:
+  demo-network:
+    driver: bridge
